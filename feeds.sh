@@ -3,27 +3,27 @@
 # author: Carbon (ecrasy@gmail.com)
 # Description: feel free to use
 # Created Time: 2022-07-23 13:04:43 UTC
-# Modified Time: 2026-09-02 06:55:00 UTC
+# Modified Time: 2026-09-02 16:58:00 UTC
 #########################################################################
 
 #!/bin/bash
 
+# Passwall official feeds MUST be at the top so latest cores win.
+# xiaorouji transferred the project to Openwrt-Passwall.
+# https://github.com/Openwrt-Passwall/openwrt-passwall
+{
+  echo "src-git passwall_packages https://github.com/Openwrt-Passwall/openwrt-passwall-packages.git;main"
+  echo "src-git passwall_luci https://github.com/Openwrt-Passwall/openwrt-passwall.git;main"
+  cat feeds.conf.default
+} > feeds.conf.default.tmp
+mv feeds.conf.default.tmp feeds.conf.default
+echo "Added Openwrt-Passwall (luci-app-passwall + packages) at top of feeds.conf.default"
+
 echo -e "\n# Custom feeds for OpenWrt" >> feeds.conf.default
 
-# add custom packages
 echo "Adding custom packages"
 echo "src-git CustomPkgs https://github.com/ecrasy/custom-packages.git;for_official" >> feeds.conf.default
 
-# passwall: official Openwrt-Passwall repos (xiaorouji transferred to this org)
-echo "Adding Openwrt-Passwall (luci + packages)"
-echo "src-git PWpackages https://github.com/Openwrt-Passwall/openwrt-passwall-packages.git;main" >> feeds.conf.default
-echo "src-git PWluci https://github.com/Openwrt-Passwall/openwrt-passwall.git;main" >> feeds.conf.default
-
-# passwall2
-echo "Adding xiaorouji Passwall2"
-echo "src-git Passwall2 https://github.com/xiaorouji/openwrt-passwall2.git;main" >> feeds.conf.default
-
-# ssrp
 echo "Adding ShadowSocksR Plus"
 echo "src-git ssrp https://github.com/ecrasy/ssrp.git;main" >> feeds.conf.default
 

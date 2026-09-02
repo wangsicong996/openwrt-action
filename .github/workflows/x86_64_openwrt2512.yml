@@ -2,7 +2,7 @@
  # File Name: x86_64_openwrt2512.yml
  # Author: Carbon (ecrasy@gmail.com)
  # Created Time: 2022-11-08 11:38:30 UTC
- # Modified Time: 2026-09-02 06:55:00 UTC
+ # Modified Time: 2026-09-02 17:31:00 UTC
  # Description: feel free to use
  # ┏┛ ┻━━━━━┛ ┻┓
  # ┃           ┃
@@ -27,10 +27,10 @@ name: Build openwrt-25.12 for x86_64
 
 on:
   workflow_dispatch:
-  #schedule:
-  # - cron: '25 8 * * SAT'
-  #watch:
-  # types: [started]
+
+permissions:
+  actions: write
+  contents: read
 
 env:
   SOURCE_URL: https://github.com/openwrt/openwrt.git
@@ -167,17 +167,36 @@ jobs:
           echo "CURRENT_HASH=$CURRENT_HASH" >> $GITHUB_ENV
           echo "CURRENT_HASH=$CURRENT_HASH" >> $GITHUB_OUTPUT
           echo "CURRENT_HASH is $CURRENT_HASH"
-          echo "REBUILD_TOOLCHAIN=true" >> $GITHUB_OUTPUT
+
+      - name: Restore Toolchain Cache
+        id: tc-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: output
+          key: toolchain-${{ env.SOURCE_BRANCH }}-${{ steps.hash.outputs.CURRENT_HASH }}-${{ runner.os }}
+
+      - name: Decide Toolchain Rebuild
+        id: rebuild
+        run: |
+          if [ "${{ steps.tc-cache.outputs.cache-hit }}" = "true" ] \
+             && ls "$TOOLCHAIN_OUTPUT"/${TOOLCHAIN_IMAGE}.img.* >/dev/null 2>&1 \
+             && [ "$(cat "$TOOLCHAIN_OUTPUT/${TOOLCHAIN_IMAGE}.hash" 2>/dev/null)" = "$CURRENT_HASH" ]; then
+            echo "REBUILD_TOOLCHAIN=false" >> $GITHUB_OUTPUT
+            echo "Toolchain cache hit, skip tools/toolchain compile"
+          else
+            echo "REBUILD_TOOLCHAIN=true" >> $GITHUB_OUTPUT
+            echo "Toolchain cache miss, will compile"
+          fi
 
       - name: Compile Tools
-        if: steps.hash.outputs.REBUILD_TOOLCHAIN == 'true'
+        if: steps.rebuild.outputs.REBUILD_TOOLCHAIN == 'true'
         run: |
           cd $OPENWRT_ROOT_PATH
           echo "$(nproc) threads compile tools"
           make tools/compile -j$(nproc)
 
       - name: Compile Toolchain
-        if: steps.hash.outputs.REBUILD_TOOLCHAIN == 'true'
+        if: steps.rebuild.outputs.REBUILD_TOOLCHAIN == 'true'
         run: |
           cd $OPENWRT_ROOT_PATH
           echo "$(nproc) threads compile toolchain"
@@ -185,7 +204,7 @@ jobs:
           rm -rf .config* dl bin
 
       - name: Generate Toolchain Image
-        if: steps.hash.outputs.REBUILD_TOOLCHAIN == 'true'
+        if: steps.rebuild.outputs.REBUILD_TOOLCHAIN == 'true'
         run: |
           cd workspace
           mksquashfs openwrt $TOOLCHAIN_IMAGE -force-gid 1001 -force-uid 1001 -comp zstd
@@ -195,12 +214,19 @@ jobs:
           cd $OPENWRT_ROOT_PATH
           echo $CURRENT_HASH > $GITHUB_WORKSPACE/output/$TOOLCHAIN_IMAGE.hash
 
+      - name: Save Toolchain Cache
+        if: steps.rebuild.outputs.REBUILD_TOOLCHAIN == 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: output
+          key: toolchain-${{ env.SOURCE_BRANCH }}-${{ steps.hash.outputs.CURRENT_HASH }}-${{ runner.os }}
+
       - name: Upload Toolchain Image To Artifact
-        if: steps.hash.outputs.REBUILD_TOOLCHAIN == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: ${{ env.TOOLCHAIN_IMAGE }}
           path: output
+          if-no-files-found: error
           retention-days: 1
 
   Build:

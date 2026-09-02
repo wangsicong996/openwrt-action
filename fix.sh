@@ -140,6 +140,25 @@ if [ -n "${v2ray_geodata_ver}" ]; then
 fi
 
 
+# Prefer Openwrt-Passwall cores over stock / ssrp copies
+# https://github.com/Openwrt-Passwall/openwrt-passwall
+PW_CONFLICTS="xray-core v2ray-geodata sing-box chinadns-ng dns2socks hysteria ipt2socks microsocks naiveproxy shadowsocks-rust shadowsocksr-libev simple-obfs tcping v2ray-plugin xray-plugin geoview shadow-tls"
+for pkg in $PW_CONFLICTS; do
+    rm -rf "feeds/packages/net/${pkg}"
+    rm -rf "package/feeds/packages/${pkg}"
+    rm -rf "feeds/ssrp/${pkg}"
+    rm -rf "package/feeds/ssrp/${pkg}"
+    rm -rf "feeds/CustomPkgs/net/${pkg}"
+    rm -rf "package/feeds/CustomPkgs/${pkg}"
+done
+rm -rf feeds/luci/applications/luci-app-passwall
+rm -rf package/feeds/luci/luci-app-passwall
+if [ -x scripts/feeds ]; then
+    ./scripts/feeds install -a -p passwall_packages >/dev/null 2>&1 || true
+    ./scripts/feeds install -a -p passwall_luci >/dev/null 2>&1 || true
+fi
+echo "Use Openwrt-Passwall luci-app-passwall and its xray/sing-box/chinadns-ng"
+
 # make minidlna depends on libffmpeg-full not libffmpeg
 if [ -f feeds/packages/multimedia/minidlna/Makefile ]; then
     sed -i "s/libffmpeg /libffmpeg-full /g" feeds/packages/multimedia/minidlna/Makefile
