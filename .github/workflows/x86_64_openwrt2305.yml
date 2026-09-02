@@ -223,7 +223,7 @@ jobs:
       - name: Upload Toolchain Image To Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ env.TOOLCHAIN_IMAGE }}
+          name: ${{ env.TOOLCHAIN_TAG }}
           path: output
           if-no-files-found: error
           retention-days: 1
@@ -313,7 +313,7 @@ jobs:
       - name: Download Toolchain Image From Artifacts
         uses: actions/download-artifact@v4
         with:
-          name: ${{ env.TOOLCHAIN_IMAGE }}
+          name: ${{ env.TOOLCHAIN_TAG }}
           path: workspace
 
       - name: Prepare Toolchain Image From Artifacts

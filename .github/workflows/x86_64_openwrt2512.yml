@@ -132,7 +132,7 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: output
-          key: toolchain-${{ env.SOURCE_BRANCH }}-${{ runner.os }}
+          key: toolchain-${{ env.SOURCE_BRANCH }}-gcc14-${{ runner.os }}
 
       - name: Reuse Toolchain From Previous Run
         if: github.event.inputs.force_rebuild_toolchain != 'true'
@@ -157,7 +157,7 @@ jobs:
             gh run download "$run_id" --name "$name" --dir "$TOOLCHAIN_OUTPUT"
           }
 
-          if try_download "$TOOLCHAIN_IMAGE" || try_download "$TOOLCHAIN_TAG"; then
+          if try_download "$TOOLCHAIN_TAG"; then
             find "$TOOLCHAIN_OUTPUT" -type f \( -name "${TOOLCHAIN_IMAGE}.img.*" -o -name "${TOOLCHAIN_IMAGE}.hash" \) \
               -exec mv -t "$TOOLCHAIN_OUTPUT" {} + 2>/dev/null || true
             echo "Reused toolchain from a previous 25.12 run"
@@ -248,12 +248,12 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: output
-          key: toolchain-${{ env.SOURCE_BRANCH }}-${{ runner.os }}
+          key: toolchain-${{ env.SOURCE_BRANCH }}-gcc14-${{ runner.os }}
 
       - name: Upload Toolchain Image To Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ env.TOOLCHAIN_IMAGE }}
+          name: ${{ env.TOOLCHAIN_TAG }}
           path: output
           if-no-files-found: error
           retention-days: 1
@@ -342,7 +342,7 @@ jobs:
       - name: Download Toolchain Image From Artifacts
         uses: actions/download-artifact@v4
         with:
-          name: ${{ env.TOOLCHAIN_IMAGE }}
+          name: ${{ env.TOOLCHAIN_TAG }}
           path: workspace
 
       - name: Prepare Toolchain Image From Artifacts
@@ -381,6 +381,16 @@ jobs:
           fi
           echo "Using cross compiler in $TOOLCHAIN_BIN"
           "$TOOLCHAIN_BIN/x86_64-openwrt-linux-musl-gcc" --version
+          if echo "$TOOLCHAIN_BIN" | grep -q 'gcc-13'; then
+            echo "ERROR: this image is GCC 13 (OpenWrt 24.10). 25.12.5 needs GCC 14."
+            echo "Re-run with force_rebuild_toolchain enabled so a 25.12 toolchain is compiled."
+            exit 1
+          fi
+          if ! echo "$TOOLCHAIN_BIN" | grep -q 'gcc-14'; then
+            echo "ERROR: expected staging_dir/toolchain-*gcc-14* for 25.12.5, got: $TOOLCHAIN_BIN"
+            echo "Re-run with force_rebuild_toolchain enabled."
+            exit 1
+          fi
           echo "TOOLCHAIN_BIN=$TOOLCHAIN_BIN" >> "$GITHUB_ENV"
 
       - name: Load Custom Feeds
@@ -432,8 +442,8 @@ jobs:
           make diffconfig buildversion feedsversion
           rm -rf build_dir/target-*/linux-*
           make target/compile -j$(nproc) IGNORE_ERRORS="m n" || make target/compile -j1 V=s
-          make package/kernel/button-hotplug/compile -j$(nproc)
-          make package/compile -j$(nproc) IGNORE_ERRORS="m n"
+          make package/kernel/button-hotplug/compile -j$(nproc) || make package/kernel/button-hotplug/compile -j1 V=s
+          make package/compile -j$(nproc) IGNORE_ERRORS="m n" || make package/compile -j1 V=s
           make package/index
 
       - name: Generate Firmware
