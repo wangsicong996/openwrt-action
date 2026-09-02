@@ -384,12 +384,20 @@ jobs:
           cd $OPENWRT_ROOT_PATH
           ./$FIX_SH
           ./$DIY_SH
-          make defconfig
-          # 25.12 uses apk; iptables-nft and iptables-zz-legacy both provide iptables and cannot be installed together
+          # Disable before defconfig so .config stays in sync (apk cannot mix nft + legacy iptables)
           sed -i 's/^CONFIG_PACKAGE_iptables-zz-legacy=y/# CONFIG_PACKAGE_iptables-zz-legacy is not set/' .config
           sed -i 's/^CONFIG_PACKAGE_ip6tables-zz-legacy=y/# CONFIG_PACKAGE_ip6tables-zz-legacy is not set/' .config
           sed -i 's/^CONFIG_PACKAGE_xtables-legacy=y/# CONFIG_PACKAGE_xtables-legacy is not set/' .config
-          echo "Disabled iptables/xtables legacy (keep nft)"
+          make defconfig
+          if grep -qE '^CONFIG_PACKAGE_(iptables-zz-legacy|ip6tables-zz-legacy|xtables-legacy)=y' .config; then
+            echo "WARN: defconfig re-enabled legacy iptables, forcing nft-only"
+            sed -i 's/^CONFIG_PACKAGE_iptables-zz-legacy=y/# CONFIG_PACKAGE_iptables-zz-legacy is not set/' .config
+            sed -i 's/^CONFIG_PACKAGE_ip6tables-zz-legacy=y/# CONFIG_PACKAGE_ip6tables-zz-legacy is not set/' .config
+            sed -i 's/^CONFIG_PACKAGE_xtables-legacy=y/# CONFIG_PACKAGE_xtables-legacy is not set/' .config
+            make olddefconfig
+          fi
+          echo "iptables variants in .config:"
+          grep -E 'CONFIG_PACKAGE_(iptables|ip6tables|xtables)' .config | grep -v '^#' || true
 
       - name: Download Packages
         id: download
@@ -404,7 +412,9 @@ jobs:
           echo "$(nproc) threads compile packages"
           make buildinfo
           make diffconfig buildversion feedsversion
-          make target/compile -j$(nproc) IGNORE_ERRORS="m n"
+          # Overlay toolchain image may contain a stale kernel tree from toolchain/compile
+          make target/linux/clean || rm -rf build_dir/target-*/linux-*
+          make target/compile -j$(nproc) IGNORE_ERRORS="m n" || make target/compile -j1 V=s
           make package/kernel/button-hotplug/compile -j$(nproc)
           make package/compile -j$(nproc) IGNORE_ERRORS="m n"
           make package/index
