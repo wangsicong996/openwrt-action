@@ -443,7 +443,7 @@ jobs:
           rm -rf build_dir/target-*/linux-*
           make target/compile -j$(nproc) IGNORE_ERRORS="m n" || make target/compile -j1 V=s
           make package/kernel/button-hotplug/compile -j$(nproc) || make package/kernel/button-hotplug/compile -j1 V=s
-          make package/compile -j$(nproc) IGNORE_ERRORS="m n" || make package/compile -j1 V=s
+          make package/compile -j$(nproc) IGNORE_ERRORS="m n"
           make package/index
 
       - name: Generate Firmware
