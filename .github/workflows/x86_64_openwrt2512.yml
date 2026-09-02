@@ -360,6 +360,30 @@ jobs:
           git fetch --depth $CLONE_DEPTH origin $SOURCE_BRANCH || true
           git checkout --detach "$SOURCE_BRANCH" || git checkout FETCH_HEAD || true
 
+      - name: Export Cross Compiler PATH
+        run: |
+          cd $OPENWRT_ROOT_PATH
+          echo "staging_dir:"
+          ls -la staging_dir || true
+          ls -d staging_dir/toolchain-* 2>/dev/null || true
+          TOOLCHAIN_BIN=""
+          for d in staging_dir/toolchain-*/bin; do
+            if [ -x "$d/x86_64-openwrt-linux-musl-gcc" ]; then
+              TOOLCHAIN_BIN="$(pwd)/$d"
+              break
+            fi
+          done
+          if [ -z "$TOOLCHAIN_BIN" ]; then
+            echo "ERROR: x86_64-openwrt-linux-musl-gcc not found in reused toolchain image"
+            find staging_dir -iname '*gcc*' 2>/dev/null | head -50
+            echo "Re-run this workflow with force_rebuild_toolchain enabled"
+            exit 1
+          fi
+          echo "Using cross compiler in $TOOLCHAIN_BIN"
+          "$TOOLCHAIN_BIN/x86_64-openwrt-linux-musl-gcc" --version
+          echo "$TOOLCHAIN_BIN" >> "$GITHUB_PATH"
+          echo "$(pwd)/staging_dir/host/bin" >> "$GITHUB_PATH"
+
       - name: Load Custom Feeds
         run: |
           cp $FEEDS_SH $OPENWRT_ROOT_PATH/$FEEDS_SH
@@ -398,11 +422,14 @@ jobs:
       - name: Compile Packages
         run: |
           cd $OPENWRT_ROOT_PATH
+          export PATH="$(ls -d "$PWD"/staging_dir/toolchain-*/bin | head -1):$PWD/staging_dir/host/bin:$PATH"
+          echo "cross gcc: $(command -v x86_64-openwrt-linux-musl-gcc)"
+          command -v x86_64-openwrt-linux-musl-gcc
           echo "$(nproc) threads compile packages"
           make buildinfo
           make diffconfig buildversion feedsversion
-          # Overlay toolchain image may contain a stale kernel tree from toolchain/compile
-          make target/linux/clean || rm -rf build_dir/target-*/linux-*
+          # Drop stale kernel tree from the toolchain squashfs; keep staging_dir/toolchain
+          rm -rf build_dir/target-*/linux-*
           make target/compile -j$(nproc) IGNORE_ERRORS="m n" || make target/compile -j1 V=s
           make package/kernel/button-hotplug/compile -j$(nproc)
           make package/compile -j$(nproc) IGNORE_ERRORS="m n"
