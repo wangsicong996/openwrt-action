@@ -2,7 +2,7 @@
  # File Name: x86_64_openwrt2512.yml
  # Author: Carbon (ecrasy@gmail.com)
  # Created Time: 2022-11-08 11:38:30 UTC
- # Modified Time: 2026-09-02 17:31:00 UTC
+ # Modified Time: 2026-09-02 19:27:00 UTC
  # Description: feel free to use
  # ┏┛ ┻━━━━━┛ ┻┓
  # ┃           ┃
@@ -27,6 +27,11 @@ name: Build openwrt-25.12 for x86_64
 
 on:
   workflow_dispatch:
+    inputs:
+      force_rebuild_toolchain:
+        description: '强制重编译工具链（默认复用上次已完成的 toolchain）'
+        type: boolean
+        default: false
 
 permissions:
   actions: write
@@ -77,60 +82,22 @@ jobs:
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Free Up Disk Space
-        env:
-          DEBIAN_FRONTEND: noninteractive
-        run: |
-          #echo 'APT::Get::Always-Include-Phased-Updates "false";' | sudo tee /etc/apt/apt.conf.d/99-phased-updates
-          sudo -E apt-get -qq update
-          sudo -E apt-get -qq -y purge ghc* zulu* google* dotnet* mysql* php apache2 azure-cli firefox powershell
-          sudo -E apt-get -y autoremove --purge
-          sudo -E apt-get -y clean
-          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc
-          docker image prune -a -f
-
-      - name: Initialize Environment
-        env:
-          DEBIAN_FRONTEND: noninteractive
-        run: |
-          sudo -E apt-get -qq -y upgrade
-          sudo -E apt-get -y install $(cat $GITHUB_WORKSPACE/openwrt-env)
-          sudo -E apt-get -y autoremove --purge
-          sudo -E apt-get -y clean
-          sudo ln -sf /usr/share/zoneinfo/Asia/Shanghai /etc/localtime
-          mkdir workspace
-
-      - name: Clone Openwrt Source
+      - name: Setup Paths
         id: clone
         run: |
-          git clone --depth $CLONE_DEPTH -b $SOURCE_BRANCH $SOURCE_URL workspace/openwrt
-          cd workspace/openwrt
-          echo "OPENWRT_ROOT_PATH=$PWD" >> $GITHUB_ENV
-          echo "OPENWRT_ROOT_PATH=$PWD" >> $GITHUB_OUTPUT
-
-          mkdir -p $GITHUB_WORKSPACE/output
-          cd $GITHUB_WORKSPACE/output
-          export TOOLCHAIN_OUTPUT="$(pwd)"
-          echo "TOOLCHAIN_OUTPUT=$TOOLCHAIN_OUTPUT" >> $GITHUB_ENV
-          echo "TOOLCHAIN_OUTPUT=$TOOLCHAIN_OUTPUT" >> $GITHUB_OUTPUT
-
-      - name: Generate Toolchain Config
-        run: |
-          cp $CONFIG_FILE $OPENWRT_ROOT_PATH/.config
-          echo -e "\nCONFIG_ALL=y" >> $OPENWRT_ROOT_PATH/.config
-          echo -e "\nCONFIG_ALL_NONSHARED=y" >> $OPENWRT_ROOT_PATH/.config
-          cd $OPENWRT_ROOT_PATH
-          make defconfig > /dev/null 2>&1
+          mkdir -p "$GITHUB_WORKSPACE/output" "$GITHUB_WORKSPACE/workspace"
+          echo "OPENWRT_ROOT_PATH=$GITHUB_WORKSPACE/workspace/openwrt" >> $GITHUB_ENV
+          echo "OPENWRT_ROOT_PATH=$GITHUB_WORKSPACE/workspace/openwrt" >> $GITHUB_OUTPUT
+          echo "TOOLCHAIN_OUTPUT=$GITHUB_WORKSPACE/output" >> $GITHUB_ENV
+          echo "TOOLCHAIN_OUTPUT=$GITHUB_WORKSPACE/output" >> $GITHUB_OUTPUT
 
       - name: Generate Variables
         id: env
         run: |
-          cd $GITHUB_WORKSPACE
-          export CURRENT_BRANCH="$(git symbolic-ref --short HEAD)"
+          export CURRENT_BRANCH="${GITHUB_REF_NAME}"
           echo "CURRENT_BRANCH=$CURRENT_BRANCH" >> $GITHUB_ENV
           echo "CURRENT_BRANCH=$CURRENT_BRANCH" >> $GITHUB_OUTPUT
 
-          cd $OPENWRT_ROOT_PATH
           export SOURCE_OWNER="$(echo $SOURCE_URL | awk -F '/' '{print $(NF-1)}')"
           echo "SOURCE_OWNER=$SOURCE_OWNER" >> $GITHUB_ENV
           echo "SOURCE_OWNER=$SOURCE_OWNER" >> $GITHUB_OUTPUT
@@ -139,15 +106,15 @@ jobs:
           echo "SOURCE_REPO=$SOURCE_REPO" >> $GITHUB_ENV
           echo "SOURCE_REPO=$SOURCE_REPO" >> $GITHUB_OUTPUT
 
-          export DEVICE_TARGET=$(cat .config | grep CONFIG_TARGET_BOARD | awk -F '"' '{print $2}')
+          export DEVICE_TARGET=x86
           echo "DEVICE_TARGET=$DEVICE_TARGET" >> $GITHUB_ENV
           echo "DEVICE_TARGET=$DEVICE_TARGET" >> $GITHUB_OUTPUT
 
-          export DEVICE_SUBTARGET=$(cat .config | grep CONFIG_TARGET_SUBTARGET | awk -F '"' '{print $2}')
+          export DEVICE_SUBTARGET=64
           echo "DEVICE_SUBTARGET=$DEVICE_SUBTARGET" >> $GITHUB_ENV
           echo "DEVICE_SUBTARGET=$DEVICE_SUBTARGET" >> $GITHUB_OUTPUT
 
-          export DEVICE_PLATFORM=$(cat .config | grep CONFIG_TARGET_ARCH_PACKAGES | awk -F '"' '{print $2}')
+          export DEVICE_PLATFORM=x86_64
           echo "DEVICE_PLATFORM=$DEVICE_PLATFORM" >> $GITHUB_ENV
           echo "DEVICE_PLATFORM=$DEVICE_PLATFORM" >> $GITHUB_OUTPUT
 
@@ -159,34 +126,96 @@ jobs:
           echo "BUILD_DATE=$BUILD_DATE" >> $GITHUB_ENV
           echo "BUILD_DATE=$BUILD_DATE" >> $GITHUB_OUTPUT
 
-      - name: Compare Toolchain Hash
-        id: hash
-        run: |
-          cd $OPENWRT_ROOT_PATH
-          export CURRENT_HASH=$(git log --pretty=tformat:"%H" -n1 tools toolchain)
-          echo "CURRENT_HASH=$CURRENT_HASH" >> $GITHUB_ENV
-          echo "CURRENT_HASH=$CURRENT_HASH" >> $GITHUB_OUTPUT
-          echo "CURRENT_HASH is $CURRENT_HASH"
-
       - name: Restore Toolchain Cache
         id: tc-cache
+        if: github.event.inputs.force_rebuild_toolchain != 'true'
         uses: actions/cache/restore@v4
         with:
           path: output
-          key: toolchain-${{ env.SOURCE_BRANCH }}-${{ steps.hash.outputs.CURRENT_HASH }}-${{ runner.os }}
+          key: toolchain-${{ env.SOURCE_BRANCH }}-${{ runner.os }}
+
+      - name: Reuse Toolchain From Previous Run
+        if: github.event.inputs.force_rebuild_toolchain != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p "$TOOLCHAIN_OUTPUT"
+          if ls "$TOOLCHAIN_OUTPUT"/${TOOLCHAIN_IMAGE}.img.* >/dev/null 2>&1; then
+            echo "Already have toolchain from cache"
+            exit 0
+          fi
+
+          try_download() {
+            local name="$1"
+            local run_id
+            run_id=$(gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts?name=${name}&per_page=20" \
+              --jq "[.artifacts[] | select(.expired==false and .workflow_run.id != ${{ github.run_id }})] | first | .workflow_run.id // empty")
+            if [ -z "$run_id" ]; then
+              return 1
+            fi
+            echo "Downloading artifact '$name' from run $run_id"
+            gh run download "$run_id" --name "$name" --dir "$TOOLCHAIN_OUTPUT"
+          }
+
+          if try_download "$TOOLCHAIN_IMAGE" || try_download "$TOOLCHAIN_TAG"; then
+            find "$TOOLCHAIN_OUTPUT" -type f \( -name "${TOOLCHAIN_IMAGE}.img.*" -o -name "${TOOLCHAIN_IMAGE}.hash" \) \
+              -exec mv -t "$TOOLCHAIN_OUTPUT" {} + 2>/dev/null || true
+            echo "Reused toolchain from a previous 25.12 run"
+            ls -lh "$TOOLCHAIN_OUTPUT"
+          else
+            echo "No previous toolchain artifact found (will compile if needed)"
+          fi
 
       - name: Decide Toolchain Rebuild
         id: rebuild
         run: |
-          if [ "${{ steps.tc-cache.outputs.cache-hit }}" = "true" ] \
-             && ls "$TOOLCHAIN_OUTPUT"/${TOOLCHAIN_IMAGE}.img.* >/dev/null 2>&1 \
-             && [ "$(cat "$TOOLCHAIN_OUTPUT/${TOOLCHAIN_IMAGE}.hash" 2>/dev/null)" = "$CURRENT_HASH" ]; then
+          if [ "${{ github.event.inputs.force_rebuild_toolchain }}" = "true" ]; then
+            echo "REBUILD_TOOLCHAIN=true" >> $GITHUB_OUTPUT
+            echo "Forced toolchain rebuild"
+          elif ls "$TOOLCHAIN_OUTPUT"/${TOOLCHAIN_IMAGE}.img.* >/dev/null 2>&1; then
             echo "REBUILD_TOOLCHAIN=false" >> $GITHUB_OUTPUT
-            echo "Toolchain cache hit, skip tools/toolchain compile"
+            echo "Reuse existing toolchain, skip compile, go to Build"
           else
             echo "REBUILD_TOOLCHAIN=true" >> $GITHUB_OUTPUT
-            echo "Toolchain cache miss, will compile"
+            echo "No reusable toolchain, will compile"
           fi
+
+      - name: Free Up Disk Space
+        if: steps.rebuild.outputs.REBUILD_TOOLCHAIN == 'true'
+        env:
+          DEBIAN_FRONTEND: noninteractive
+        run: |
+          sudo -E apt-get -qq update
+          sudo -E apt-get -qq -y purge ghc* zulu* google* dotnet* mysql* php apache2 azure-cli firefox powershell
+          sudo -E apt-get -y autoremove --purge
+          sudo -E apt-get -y clean
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc
+          docker image prune -a -f
+
+      - name: Initialize Environment
+        if: steps.rebuild.outputs.REBUILD_TOOLCHAIN == 'true'
+        env:
+          DEBIAN_FRONTEND: noninteractive
+        run: |
+          sudo -E apt-get -qq -y upgrade
+          sudo -E apt-get -y install $(cat $GITHUB_WORKSPACE/openwrt-env)
+          sudo -E apt-get -y autoremove --purge
+          sudo -E apt-get -y clean
+          sudo ln -sf /usr/share/zoneinfo/Asia/Shanghai /etc/localtime
+
+      - name: Clone Openwrt Source
+        if: steps.rebuild.outputs.REBUILD_TOOLCHAIN == 'true'
+        run: |
+          git clone --depth $CLONE_DEPTH -b $SOURCE_BRANCH $SOURCE_URL workspace/openwrt
+
+      - name: Generate Toolchain Config
+        if: steps.rebuild.outputs.REBUILD_TOOLCHAIN == 'true'
+        run: |
+          cp $CONFIG_FILE $OPENWRT_ROOT_PATH/.config
+          echo -e "\nCONFIG_ALL=y" >> $OPENWRT_ROOT_PATH/.config
+          echo -e "\nCONFIG_ALL_NONSHARED=y" >> $OPENWRT_ROOT_PATH/.config
+          cd $OPENWRT_ROOT_PATH
+          make defconfig > /dev/null 2>&1
 
       - name: Compile Tools
         if: steps.rebuild.outputs.REBUILD_TOOLCHAIN == 'true'
@@ -212,14 +241,14 @@ jobs:
           split -d -b 1900M $TOOLCHAIN_IMAGE $GITHUB_WORKSPACE/output/$TOOLCHAIN_IMAGE.img.
           rm $TOOLCHAIN_IMAGE
           cd $OPENWRT_ROOT_PATH
-          echo $CURRENT_HASH > $GITHUB_WORKSPACE/output/$TOOLCHAIN_IMAGE.hash
+          echo "$SOURCE_BRANCH" > $GITHUB_WORKSPACE/output/$TOOLCHAIN_IMAGE.hash
 
       - name: Save Toolchain Cache
-        if: steps.rebuild.outputs.REBUILD_TOOLCHAIN == 'true'
+        if: steps.tc-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4
         with:
           path: output
-          key: toolchain-${{ env.SOURCE_BRANCH }}-${{ steps.hash.outputs.CURRENT_HASH }}-${{ runner.os }}
+          key: toolchain-${{ env.SOURCE_BRANCH }}-${{ runner.os }}
 
       - name: Upload Toolchain Image To Artifact
         uses: actions/upload-artifact@v4
