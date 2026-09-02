@@ -360,7 +360,7 @@ jobs:
           git fetch --depth $CLONE_DEPTH origin $SOURCE_BRANCH || true
           git checkout --detach "$SOURCE_BRANCH" || git checkout FETCH_HEAD || true
 
-      - name: Export Cross Compiler PATH
+      - name: Verify Cross Compiler
         run: |
           cd $OPENWRT_ROOT_PATH
           echo "staging_dir:"
@@ -381,8 +381,7 @@ jobs:
           fi
           echo "Using cross compiler in $TOOLCHAIN_BIN"
           "$TOOLCHAIN_BIN/x86_64-openwrt-linux-musl-gcc" --version
-          echo "$TOOLCHAIN_BIN" >> "$GITHUB_PATH"
-          echo "$(pwd)/staging_dir/host/bin" >> "$GITHUB_PATH"
+          echo "TOOLCHAIN_BIN=$TOOLCHAIN_BIN" >> "$GITHUB_ENV"
 
       - name: Load Custom Feeds
         run: |
@@ -422,13 +421,15 @@ jobs:
       - name: Compile Packages
         run: |
           cd $OPENWRT_ROOT_PATH
-          export PATH="$(ls -d "$PWD"/staging_dir/toolchain-*/bin | head -1):$PWD/staging_dir/host/bin:$PATH"
+          # Only the cross compiler prefix belongs on PATH. Do not prepend
+          # staging_dir/host/bin here — those wrappers shadow system git/bash/grep
+          # and break OpenWrt's prerequisite check.
+          export PATH="${TOOLCHAIN_BIN:-$(ls -d "$PWD"/staging_dir/toolchain-*/bin | head -1)}:$PATH"
           echo "cross gcc: $(command -v x86_64-openwrt-linux-musl-gcc)"
-          command -v x86_64-openwrt-linux-musl-gcc
+          command -v x86_64-openwrt-linux-musl-gcc >/dev/null
           echo "$(nproc) threads compile packages"
           make buildinfo
           make diffconfig buildversion feedsversion
-          # Drop stale kernel tree from the toolchain squashfs; keep staging_dir/toolchain
           rm -rf build_dir/target-*/linux-*
           make target/compile -j$(nproc) IGNORE_ERRORS="m n" || make target/compile -j1 V=s
           make package/kernel/button-hotplug/compile -j$(nproc)
