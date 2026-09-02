@@ -384,20 +384,9 @@ jobs:
           cd $OPENWRT_ROOT_PATH
           ./$FIX_SH
           ./$DIY_SH
-          # Disable before defconfig so .config stays in sync (apk cannot mix nft + legacy iptables)
-          sed -i 's/^CONFIG_PACKAGE_iptables-zz-legacy=y/# CONFIG_PACKAGE_iptables-zz-legacy is not set/' .config
-          sed -i 's/^CONFIG_PACKAGE_ip6tables-zz-legacy=y/# CONFIG_PACKAGE_ip6tables-zz-legacy is not set/' .config
-          sed -i 's/^CONFIG_PACKAGE_xtables-legacy=y/# CONFIG_PACKAGE_xtables-legacy is not set/' .config
           make defconfig
-          if grep -qE '^CONFIG_PACKAGE_(iptables-zz-legacy|ip6tables-zz-legacy|xtables-legacy)=y' .config; then
-            echo "WARN: defconfig re-enabled legacy iptables, forcing nft-only"
-            sed -i 's/^CONFIG_PACKAGE_iptables-zz-legacy=y/# CONFIG_PACKAGE_iptables-zz-legacy is not set/' .config
-            sed -i 's/^CONFIG_PACKAGE_ip6tables-zz-legacy=y/# CONFIG_PACKAGE_ip6tables-zz-legacy is not set/' .config
-            sed -i 's/^CONFIG_PACKAGE_xtables-legacy=y/# CONFIG_PACKAGE_xtables-legacy is not set/' .config
-            make olddefconfig
-          fi
           echo "iptables variants in .config:"
-          grep -E 'CONFIG_PACKAGE_(iptables|ip6tables|xtables)' .config | grep -v '^#' || true
+          grep -E 'CONFIG_PACKAGE_(iptables|ip6tables|xtables)|Iptables_Transparent|Nftables_Transparent' .config | grep -v '^#' || true
 
       - name: Download Packages
         id: download
