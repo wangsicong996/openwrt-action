@@ -80,25 +80,31 @@ if [ -n "${dnsmasq_data_ver}" ]; then
     fi
 fi
 
-# Try latest golang (skip OpenWrt 25.12+ dummy/multi-version layout)
-tmp_ver=$(grep -m1 'GO_VERSION_MAJOR_MINOR:=' $GITHUB_WORKSPACE/data/golang/golang/Makefile)
-tmp_pkg=$(grep -m1 'GO_VERSION_PATCH:=' $GITHUB_WORKSPACE/data/golang/golang/Makefile)
-golang_data_ver="${tmp_ver##*=}.${tmp_pkg##*=}"
+# Try latest golang.
+# OpenWrt 25.12+ already ships multi-version golang (Go 1.26).
+# OpenWrt 24.10 still has Go 1.23, but sing-box 1.14 requires Go 1.25.5+.
 golang_path="feeds/packages/lang/golang"
-if grep -q 'GO_DEFAULT_VERSION' ${golang_path}/golang/Makefile 2>/dev/null; then
+if [ ! -d "${golang_path}" ]; then
+    echo "Golang feed missing, skip"
+elif grep -q 'GO_DEFAULT_VERSION' ${golang_path}/golang/Makefile 2>/dev/null; then
     echo "Skip bundling local golang; feeds already use OpenWrt multi-version golang"
-elif [ -n "${golang_data_ver}" ]; then
-    tmp_ver=$(grep -m1 'GO_VERSION_MAJOR_MINOR:=' ${golang_path}/golang/Makefile)
-    tmp_pkg=$(grep -m1 'GO_VERSION_PATCH:=' ${golang_path}/golang/Makefile)
-    golang_repo_ver="${tmp_ver##*=}.${tmp_pkg##*=}"
-    cr=$(version_comp "${golang_repo_ver}" "${golang_data_ver}")
-    if [ "$cr" == "<" ]; then
-        rm -rf $golang_path
-        cp -r $GITHUB_WORKSPACE/data/golang ${golang_path}
-        echo "Upgrade golang from ${golang_repo_ver} to ${golang_data_ver}"
-    else
-        echo "Golang no change need to make: ${golang_repo_ver}"
+else
+    echo "OpenWrt 24.x golang is too old for sing-box 1.14; replacing with 25.12 golang (Go 1.26)"
+    rm -rf /tmp/openwrt-packages-golang
+    git clone --depth 1 -b openwrt-25.12 --filter=blob:none --sparse \
+        https://github.com/openwrt/packages.git /tmp/openwrt-packages-golang
+    git -C /tmp/openwrt-packages-golang sparse-checkout set lang/golang
+    if [ ! -f /tmp/openwrt-packages-golang/lang/golang/golang/Makefile ]; then
+        echo "Failed to fetch openwrt-25.12 lang/golang"
+        rm -rf /tmp/openwrt-packages-golang
+        exit 1
     fi
+    rm -rf "${golang_path}"
+    cp -a /tmp/openwrt-packages-golang/lang/golang "${golang_path}"
+    rm -rf /tmp/openwrt-packages-golang
+    ./scripts/feeds update -i packages
+    ./scripts/feeds install golang golang1.26 golang-bootstrap
+    echo "Installed OpenWrt 25.12 golang (default Go 1.26) into feeds/packages/lang/golang"
 fi
 
 # Try latest v2ray-core
