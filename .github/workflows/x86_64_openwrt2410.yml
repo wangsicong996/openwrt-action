@@ -413,6 +413,12 @@ jobs:
           ./$FIX_SH
           ./$DIY_SH
           make defconfig
+          echo "firewall / passwall / dropped packages after defconfig:"
+          grep -E 'CONFIG_PACKAGE_(iptables|ip6tables|xtables|docker|dockerd|qbittorrent|adguardhome|aria2|v2raya|openvpn|sing-box|xray-core)|Iptables_Transparent|Nftables_Transparent' .config | grep -v '^#' || true
+          if grep -q '^CONFIG_PACKAGE_iptables-zz-legacy=y' .config; then
+            echo "ERROR: iptables-zz-legacy was re-selected; Passwall Iptables must stay off"
+            exit 1
+          fi
 
       - name: Download Packages
         id: download
@@ -439,7 +445,13 @@ jobs:
         id: generate
         run: |
           cd $OPENWRT_ROOT_PATH
-          make package/install -j$(nproc) || make package/install -j1 V=s
+          if ! make package/install -j$(nproc); then
+            echo "===== package/install failed, retrying with -j1 V=s ====="
+            make package/install -j1 V=s | tee /tmp/pkg-install.log
+            echo "===== install errors ====="
+            grep -E 'Collected errors|Cannot install|check_data_file_clashes|satisfy_dependencies|Unknown package|incompatible with the architectures|pkg_hash|ERROR:|failed to build' /tmp/pkg-install.log || true
+            exit 1
+          fi
           make target/install -j$(nproc) || make target/install -j1 V=s
           make json_overview_image_info
           make checksum
