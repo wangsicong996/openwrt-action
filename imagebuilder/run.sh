@@ -4,8 +4,12 @@ set -euo pipefail
 
 RELEASE="${RELEASE:?RELEASE is required, e.g. 25.12.5}"
 PACKAGES_FILE="${PACKAGES_FILE:?PACKAGES_FILE is required}"
-if [ ! -f "$PACKAGES_FILE" ] && [ -f "${GITHUB_WORKSPACE}/${PACKAGES_FILE}" ]; then
+if [[ "$PACKAGES_FILE" != /* ]]; then
     PACKAGES_FILE="${GITHUB_WORKSPACE}/${PACKAGES_FILE}"
+fi
+if [ ! -f "$PACKAGES_FILE" ]; then
+    echo "ERROR: packages file not found: $PACKAGES_FILE"
+    exit 1
 fi
 INCLUDE_PASSWALL="${INCLUDE_PASSWALL:-0}"
 ROOTFS_PARTSIZE="${ROOTFS_PARTSIZE:-768}"
