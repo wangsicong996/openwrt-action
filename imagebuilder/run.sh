@@ -25,12 +25,17 @@ cd "$WORK"
 echo "Fetching index from $DL_BASE"
 curl -fsSL "$DL_BASE/sha256sums" -o sha256sums
 
+# GNU sha256sums uses "*filename" (binary mode). Strip * before matching.
 pick_tarball() {
-    local pattern="$1"
-    awk -v p="$pattern" '$2 ~ p { gsub(/^\*/, "", $2); print $2; exit }' sha256sums
+    local needle="$1"
+    awk -v needle="$needle" '{
+        f = $2
+        sub(/^\*/, "", f)
+        if (index(f, needle) == 1) { print f; exit }
+    }' sha256sums
 }
 
-IB_TAR="$(pick_tarball '^openwrt-imagebuilder-.*Linux-x86_64\.tar\.zst$')"
+IB_TAR="$(pick_tarball 'openwrt-imagebuilder-')"
 if [ -z "$IB_TAR" ]; then
     echo "ERROR: ImageBuilder tarball not found in $DL_BASE/sha256sums"
     grep imagebuilder sha256sums || true
@@ -43,7 +48,7 @@ rm -f "$IB_TAR"
 mv openwrt-imagebuilder-* "$IB_DIR"
 
 if [ "$INCLUDE_PASSWALL" = "1" ]; then
-    SDK_TAR="$(pick_tarball '^openwrt-sdk-.*Linux-x86_64\.tar\.zst$')"
+    SDK_TAR="$(pick_tarball 'openwrt-sdk-')"
     if [ -z "$SDK_TAR" ]; then
         echo "ERROR: SDK tarball not found in $DL_BASE/sha256sums"
         grep sdk sha256sums || true
