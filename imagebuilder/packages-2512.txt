@@ -77,7 +77,6 @@ shadowsocksr-libev-ssr-redir
 shadowsocksr-libev-ssr-server
 ipt2socks
 dns2socks
-dns2tcp
 microsocks
 tcping
 lyaml

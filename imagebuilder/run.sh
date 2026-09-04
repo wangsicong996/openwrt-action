@@ -116,9 +116,37 @@ fi
 bash "$GITHUB_WORKSPACE/imagebuilder/prepare-files.sh" "$FILES_DIR"
 
 PACKAGES="$(grep -vE '^\s*(#|$)' "$PACKAGES_FILE" | tr '\n' ' ')"
+# Drop Passwall extras that SDK did not actually emit, so apk install won't fail.
+if [ "$INCLUDE_PASSWALL" = "1" ]; then
+    filtered=""
+    for p in $PACKAGES; do
+        case "$p" in
+            luci-app-passwall|luci-i18n-passwall-zh-cn|sing-box|xray-core|chinadns-ng|v2ray-geoip|v2ray-geosite|shadowsocksr-libev-*|ipt2socks|dns2socks|dns2tcp|microsocks|tcping)
+                if ls "$IB_DIR/packages/${p}"-*.apk >/dev/null 2>&1 \
+                    || ls "$IB_DIR/packages/${p}_"*.ipk >/dev/null 2>&1 \
+                    || ls "$IB_DIR/packages/${p}"-*.ipk >/dev/null 2>&1; then
+                    filtered="$filtered $p"
+                else
+                    echo "WARNING: skip $p (not in SDK output)"
+                fi
+                ;;
+            *)
+                filtered="$filtered $p"
+                ;;
+        esac
+    done
+    PACKAGES="$filtered"
+fi
 echo "ImageBuilder PROFILE=$PROFILE PACKAGES=$PACKAGES"
 
 cd "$IB_DIR"
+if [ "$INCLUDE_PASSWALL" = "1" ] && ls packages/*.apk >/dev/null 2>&1; then
+    APK_BIN="$IB_DIR/staging_dir/host/bin/apk"
+    if [ -x "$APK_BIN" ]; then
+        echo "Generating local apk index"
+        (cd packages && "$APK_BIN" mkndx --output packages.adb ./*.apk) || true
+    fi
+fi
 make image \
     PROFILE="$PROFILE" \
     PACKAGES="$PACKAGES" \
