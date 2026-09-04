@@ -24,6 +24,8 @@ FILES_DIR="${WORK}/ib-files"
 FW_DIR="${GITHUB_WORKSPACE}/firmware"
 
 mkdir -p "$WORK" "$FW_DIR"
+cp "$PACKAGES_FILE" "$WORK/packages.txt"
+PACKAGES_FILE="$WORK/packages.txt"
 cd "$WORK"
 
 echo "Fetching index from $DL_BASE"
