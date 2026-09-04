@@ -1,0 +1,63 @@
+name: ImageBuilder openwrt-24.10 for x86_64
+
+on:
+  workflow_dispatch:
+    inputs:
+      release:
+        description: '官方 24.10.x 版本号（跳板固件，不含 Passwall）'
+        type: string
+        default: '24.10.8'
+
+permissions:
+  contents: read
+
+env:
+  TZ: Asia/Shanghai
+  RELEASE: ${{ github.event.inputs.release || '24.10.8' }}
+  PACKAGES_FILE: imagebuilder/packages-2410.txt
+  INCLUDE_PASSWALL: '0'
+  ROOTFS_PARTSIZE: '768'
+
+jobs:
+  Build:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Free Up Disk Space
+        env:
+          DEBIAN_FRONTEND: noninteractive
+        run: |
+          sudo -E apt-get -qq update
+          sudo -E apt-get -qq -y purge ghc* zulu* google* dotnet* mysql* php apache2 azure-cli firefox powershell || true
+          sudo -E apt-get -y autoremove --purge
+          sudo -E apt-get -y clean
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc
+          docker image prune -a -f || true
+
+      - name: Initialize Environment
+        env:
+          DEBIAN_FRONTEND: noninteractive
+        run: |
+          sudo -E apt-get -qq -y upgrade
+          sudo -E apt-get -y install $(cat "$GITHUB_WORKSPACE/openwrt-env") zstd python3
+          sudo -E apt-get -y autoremove --purge
+          sudo -E apt-get -y clean
+          sudo ln -sf /usr/share/zoneinfo/Asia/Shanghai /etc/localtime
+          chmod +x imagebuilder/run.sh imagebuilder/prepare-files.sh
+
+      - name: Assemble Firmware
+        run: |
+          echo "Official ImageBuilder $RELEASE (no SDK / no Passwall)"
+          bash imagebuilder/run.sh
+
+      - name: Upload Firmware To Action
+        uses: actions/upload-artifact@v4
+        with:
+          name: firmware-x86_64-openwrt-2410-imagebuilder
+          path: firmware
+          if-no-files-found: error
+          retention-days: 30

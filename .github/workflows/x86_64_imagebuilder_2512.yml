@@ -1,0 +1,63 @@
+name: ImageBuilder openwrt-25.12 for x86_64
+
+on:
+  workflow_dispatch:
+    inputs:
+      release:
+        description: '官方 25.12.x 版本号（ImageBuilder + SDK 编 Passwall）'
+        type: string
+        default: '25.12.5'
+
+permissions:
+  contents: read
+
+env:
+  TZ: Asia/Shanghai
+  RELEASE: ${{ github.event.inputs.release || '25.12.5' }}
+  PACKAGES_FILE: imagebuilder/packages-2512.txt
+  INCLUDE_PASSWALL: '1'
+  ROOTFS_PARTSIZE: '768'
+
+jobs:
+  Build:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Free Up Disk Space
+        env:
+          DEBIAN_FRONTEND: noninteractive
+        run: |
+          sudo -E apt-get -qq update
+          sudo -E apt-get -qq -y purge ghc* zulu* google* dotnet* mysql* php apache2 azure-cli firefox powershell || true
+          sudo -E apt-get -y autoremove --purge
+          sudo -E apt-get -y clean
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc
+          docker image prune -a -f || true
+
+      - name: Initialize Environment
+        env:
+          DEBIAN_FRONTEND: noninteractive
+        run: |
+          sudo -E apt-get -qq -y upgrade
+          sudo -E apt-get -y install $(cat "$GITHUB_WORKSPACE/openwrt-env") zstd python3
+          sudo -E apt-get -y autoremove --purge
+          sudo -E apt-get -y clean
+          sudo ln -sf /usr/share/zoneinfo/Asia/Shanghai /etc/localtime
+          chmod +x imagebuilder/run.sh imagebuilder/prepare-files.sh
+
+      - name: Assemble Firmware
+        run: |
+          echo "Official ImageBuilder + SDK $RELEASE (Passwall baked into image)"
+          bash imagebuilder/run.sh
+
+      - name: Upload Firmware To Action
+        uses: actions/upload-artifact@v4
+        with:
+          name: firmware-x86_64-openwrt-2512-imagebuilder
+          path: firmware
+          if-no-files-found: error
+          retention-days: 30
